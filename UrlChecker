@@ -1,0 +1,123 @@
+import os
+import sys
+from googleads import adwords
+import pandas as pd
+from pathlib import Path
+import argparse
+
+
+#Specify some variables
+CLIENT_YAML_PATH = os.getenv("YAML_PATH")
+SubAccounts=['968-996-5695', '340-724-7913', '122-015-2837', '229-732-1788']    #Specify all test account id's here
+url_templ='{lpurl}?utm_campaign={campaignid}_{adgroupid}_{creative}_{targetid}_{device}_{matchtype}'
+
+#Add command line options for including output_folder
+parser = argparse.ArgumentParser()
+parser.add_argument('-o', '--output-folder', help='Please included output folder dir', required=True)
+args = vars(parser.parse_args())
+output_folder=Path(args.get("output_folder")) #Final output_folder directory
+
+
+def main(output_folder):
+    """Main function for the task.
+
+    Notes for candidates:
+    - We have not provided you with mtlib.slackalert, so you will work
+    while the related lines are commented. This makes it harder to test your
+    code. Though please keep in mind that we will be focusing on your
+    approach, rather than just the output.
+    - Please do not change what this function returns.
+    """
+    
+    report = {
+          'reportName': 'ALL_TIME DISPLAY_KEYWORD_PERFORMANCE_REPORT',
+          'dateRangeType': 'ALL_TIME',
+          'reportType': 'DISPLAY_KEYWORD_PERFORMANCE_REPORT',
+          'downloadFormat': 'CSV',
+          'selector': {
+              'fields': ['AccountDescriptiveName', 'CampaignId', 'AdGroupId', 'Id', 'Criteria','TrackingUrlTemplate']       #Fields to be pulled for KEYWORD performance report
+          }
+      }
+          
+    report2 = {
+          'reportName': 'ALL_TIME CAMPAIGN_PERFORMANCE_REPORT',
+          'dateRangeType': 'ALL_TIME',
+          'reportType': 'CAMPAIGN_PERFORMANCE_REPORT',
+          'downloadFormat': 'CSV',
+          'selector': {
+              'fields': ['AccountDescriptiveName', 'CampaignId', 'TrackingUrlTemplate']     #Fields to be pulled for CAMPAIGN performance report
+          }
+      }
+    
+    f=open(output_folder / 'KeywordTrackingUrls.csv', 'w') 
+    
+    for i in SubAccounts:   #Pull keyword performance data from all test accounts and write to CSV
+        adwords_client = adwords.AdWordsClient.LoadFromStorage()
+        adwords_client.SetClientCustomerId(i)
+        report_downloader = adwords_client.GetReportDownloader(version='v201809')
+        report_downloader.DownloadReport(report, f, skip_report_header=True, skip_column_header=True,
+              skip_report_summary=True, include_zero_impressions=True)
+    
+    f.close()
+        
+    f=open(output_folder / 'CampaignTrackingUrls.csv', 'w') 
+    
+    for i in SubAccounts:    #Pull campaign performance data from all test accounts and write to CSV
+        adwords_client = adwords.AdWordsClient.LoadFromStorage()
+        adwords_client.SetClientCustomerId(i)
+        report_downloader = adwords_client.GetReportDownloader(version='v201809')
+        report_downloader.DownloadReport(report2, f, skip_report_header=True, skip_column_header=True,
+              skip_report_summary=True, include_zero_impressions=True)
+    
+    f.close()
+        
+    
+    ####################################################################
+        
+    df = pd.read_csv(output_folder / 'KeywordTrackingUrls.csv',header=None)
+    df2 = pd.read_csv(output_folder / 'CampaignTrackingUrls.csv',header=None)
+
+    df.loc[df.iloc[:,5]!=url_templ].to_csv(output_folder / 'BadKeywordTrackingUrls.csv', sep=',', header = ['AccountName', 'CampaignId', 'AdGroupId', 'Id', 'Keyword', 'TrackingUrlTemplate'], index=False)    #Get all bad keyword tracking urls     
+    df.loc[df.iloc[:,5]==url_templ].to_csv(output_folder / 'GoodKeywordTrackingUrls.csv', sep=',', header = ['AccountName', 'CampaignId', 'AdGroupId', 'Id', 'Keyword', 'TrackingUrlTemplate'], index=False)  #Get all good keyword tracking urls
+    df2.loc[df2.iloc[:,2]==url_templ].to_csv(output_folder / 'GoodCampaignTrackingUrls.csv', sep=',', header = ['AccountName', 'CampaignId', 'TrackingUrlTemplate'], index=False)    #Get all good campaign tracking urls
+
+    # # We will uncomment the line below when we run your code
+    # sa = SlackAlert()
+
+    slack_text = "Bad TrackingUrl List"
+
+    # BONUS: Attach the CSV to the Slack message
+    # Here's the docstring of SlackAlert().post_to_channel:
+    # '''
+    # Send an alert to a channel.
+
+    #     Arguments
+    #         - channel: the channel name _without_ the score.
+    #         - text_message: text message to accompany the alert.
+
+    #     Optional arguments
+    #         - file: a dictionary with the following keys: title, file_content, type, name.
+    #         These will be passed respectively to title, file, filetype and filename arguments
+    #         of the `files.upload` endpoint of Slack API.
+
+    #         See: https://api.slack.com/methods/files.upload
+
+    # '''
+    file_ = {
+            "title": "TrackingUrls",
+            "file_content": "open(output_folder / 'BadKeywordTrackingUrls.csv', 'r').read()",
+            "type": ".csv",
+            "name": "BadKeywordTrackingUrls.csv"
+    }
+
+    # # Send the alert.
+    # # We will uncomment the lines below when we're running your code.
+    # if file_:
+    #     sa.post_to_channel(channel=SLACK_CHANNEL, text_message=slack_text, file=file_)
+    # else:
+    #     sa.post_to_channel(channel=SLACK_CHANNEL, text_message=slack_text)
+
+    return slack_text, file_
+
+if __name__ == '__main__':
+    main(output_folder)
